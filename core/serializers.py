@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Moradia, Usuario, DespesaGeral, DespesaDetalhe, DespesaRateio, Pagamento, Tarefa, TarefaResponsavel
+from django.contrib.auth.hashers import make_password
 
 class MoradiaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -9,7 +10,11 @@ class MoradiaSerializer(serializers.ModelSerializer):
 class UsuarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Usuario
-        fields = '__all__'
+        fields = ['id_usuario', 'nome_completo', 'email', 'password', 'data_nascimento', 'chave_pix', 'qr_code_pix']
+        extra_kwargs = {'password': {'write_only': True}}
+
+    def create(self, validated_data):
+        return Usuario.objects.create_user(**validated_data)
 
 class DespesaGeralSerializer(serializers.ModelSerializer):
     class Meta:

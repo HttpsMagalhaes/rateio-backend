@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 
 class Moradia(models.Model):
     id_moradia = models.AutoField(primary_key=True)
@@ -13,20 +14,38 @@ class Moradia(models.Model):
     def __str__(self):
         return self.nome
 
-class Usuario(models.Model):
+class UsuarioManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('O e-mail é obrigatório')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password) # Criptografa automaticamente
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_admin', True)
+        return self.create_user(email, password, **extra_fields)
+
+class Usuario(AbstractBaseUser):
     id_usuario = models.AutoField(primary_key=True)
     nome_completo = models.CharField(max_length=150)
-    email = models.EmailField(max_length=150, unique=True) 
-    senha = models.CharField(max_length=255)               
+    email = models.EmailField(max_length=150, unique=True)
     data_nascimento = models.DateField()
     chave_pix = models.CharField(max_length=100)
     qr_code_pix = models.CharField(max_length=255, blank=True, null=True)
-    is_admin = models.BooleanField(default=False)          
-    ativo = models.BooleanField(default=True)              
-    id_moradia = models.ForeignKey(Moradia, on_delete=models.SET_NULL, null=True, blank=True)
+    is_admin = models.BooleanField(default=False)
+    ativo = models.BooleanField(default=True)
+    id_moradia = models.ForeignKey('Moradia', on_delete=models.SET_NULL, null=True, blank=True)
+
+    objects = UsuarioManager()
+
+    USERNAME_FIELD = 'email' # Define o e-mail como login
+    REQUIRED_FIELDS = ['nome_completo']
 
     def __str__(self):
-        return self.nome_completo
+        return self.email
 
 class DespesaGeral(models.Model):
     id_despesa_geral = models.AutoField(primary_key=True)
