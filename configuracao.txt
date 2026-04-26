@@ -1,23 +1,14 @@
 (Configuração Inicial)
 
-git clone https://github.com/SEU_USUARIO/rateio-backend.git
-cd rateio-backend
-
 python -m venv venv
 
 venv\Scripts\activate
 
-pip install -r requirements.txt
-
-(Rodar o servidor)
-
-venv\Scripts\activate
-
-git pull origin main
-
 python manage.py runserver
 
-(Fim do dia):
+python manage.py runserver 0.0.0.0:8000
+
+GitHub:
 
 git add .
 
