@@ -50,6 +50,7 @@ class Usuario(AbstractBaseUser):
 class DespesaGeral(models.Model):
     id_despesa_geral = models.AutoField(primary_key=True)
     descricao = models.CharField(max_length=45)
+    id_moradia = models.ForeignKey(Moradia, on_delete=models.CASCADE, null=True) 
 
     def __str__(self):
         return self.descricao

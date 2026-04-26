@@ -8,9 +8,9 @@ from .views import (
 
 router = DefaultRouter()
 
-router.register(r'moradias', MoradiaViewSet)
+router.register(r'moradias', MoradiaViewSet, basename='moradia')
 router.register(r'usuarios', UsuarioViewSet)
-router.register(r'despesas-gerais', DespesaGeralViewSet)
+router.register(r'categorias', DespesaGeralViewSet, basename='categoria')
 router.register(r'despesas-detalhes', DespesaDetalheViewSet)
 router.register(r'rateios', DespesaRateioViewSet)
 router.register(r'pagamentos', PagamentoViewSet)
@@ -19,4 +19,5 @@ router.register(r'tarefas-responsaveis', TarefaResponsavelViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    
 ]

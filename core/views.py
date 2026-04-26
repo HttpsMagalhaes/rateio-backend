@@ -10,6 +10,7 @@ from .serializers import (
     DespesaDetalheSerializer, DespesaRateioSerializer, PagamentoSerializer, 
     TarefaSerializer, TarefaResponsavelSerializer
 )
+from rest_framework.permissions import IsAuthenticated
 
 class MoradiaViewSet(viewsets.ModelViewSet):
     queryset = Moradia.objects.all()
@@ -75,6 +76,17 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 class DespesaGeralViewSet(viewsets.ModelViewSet):
     queryset = DespesaGeral.objects.all()
     serializer_class = DespesaGeralSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        usuario = self.request.user
+        if usuario.id_moradia:
+            return self.queryset.filter(id_moradia=usuario.id_moradia)
+        return self.queryset.none()
+
+    def perform_create(self, serializer):
+        # Quando for salvar, injeta automaticamente a moradia do usuário logado!
+        serializer.save(id_moradia=self.request.user.id_moradia)
 
 class DespesaDetalheViewSet(viewsets.ModelViewSet):
     queryset = DespesaDetalhe.objects.all()
