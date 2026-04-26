@@ -68,6 +68,13 @@ class MoradiaViewSet(viewsets.ModelViewSet):
             "codigo_convite": moradia.codigo_convite
         })
 
+    @action(detail=True, methods=['get'])
+    def moradores(self, request, pk=None):
+        moradia = self.get_object()
+        moradores = Usuario.objects.filter(id_moradia=moradia)
+        dados = [{"id_usuario": m.id_usuario, "nome_completo": m.nome_completo} for m in moradores]
+        return Response(dados)
+
 
 class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = Usuario.objects.all()
@@ -85,12 +92,41 @@ class DespesaGeralViewSet(viewsets.ModelViewSet):
         return self.queryset.none()
 
     def perform_create(self, serializer):
-        # Quando for salvar, injeta automaticamente a moradia do usuário logado!
+        # Quando for salvar, injeta automaticamente a moradia do usuário logado
         serializer.save(id_moradia=self.request.user.id_moradia)
 
 class DespesaDetalheViewSet(viewsets.ModelViewSet):
-    queryset = DespesaDetalhe.objects.all()
     serializer_class = DespesaDetalheSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return DespesaDetalhe.objects.filter(id_moradia=self.request.user.id_moradia).order_by('-data_vencimento')
+
+    def perform_create(self, serializer):
+        serializer.save(
+            id_usuario_credor=self.request.user,
+            id_moradia=self.request.user.id_moradia
+        )
+
+    @action(detail=False, methods=['get'])
+    def balanco(self, request):
+        usuario = request.user
+
+        receber = DespesaRateio.objects.filter(
+            id_despesa_detalhe__id_usuario_credor=usuario,
+            id_despesa_detalhe__status='pendente'
+        ).exclude(id_usuario_devedor=usuario).aggregate(total=Sum('valor_proporcional'))['total'] or 0.00
+
+        pagar = DespesaRateio.objects.filter(
+            id_usuario_devedor=usuario,
+            id_despesa_detalhe__status='pendente'
+        ).exclude(id_despesa_detalhe__id_usuario_credor=usuario).aggregate(total=Sum('valor_proporcional'))['total'] or 0.00
+
+        return Response({
+            "total_receber": receber,
+            "total_pagar": pagar,
+            "saldo_liquido": receber - pagar
+        })
 
 class DespesaRateioViewSet(viewsets.ModelViewSet):
     queryset = DespesaRateio.objects.all()

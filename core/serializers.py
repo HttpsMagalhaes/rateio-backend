@@ -22,9 +22,23 @@ class DespesaGeralSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class DespesaDetalheSerializer(serializers.ModelSerializer):
+    # Esses dois campos 'source' puxam o nome ao invés de só o ID
+    categoria_descricao = serializers.CharField(source='id_despesa_geral.descricao', read_only=True)
+    credor_nome = serializers.CharField(source='id_usuario_credor.nome_completo', read_only=True)
+    moradores_ids = serializers.SerializerMethodField()
+
     class Meta:
         model = DespesaDetalhe
-        fields = '__all__'
+        fields = [
+            'id_despesa_detalhe', 'valor_total', 'data_vencimento', 'status',
+            'id_usuario_credor', 'credor_nome', 
+            'id_despesa_geral', 'categoria_descricao', 
+            'id_moradia', 'moradores_ids'
+        ]
+
+    def get_moradores_ids(self, obj):
+        from .models import DespesaRateio
+        return list(DespesaRateio.objects.filter(id_despesa_detalhe=obj).values_list('id_usuario_devedor', flat=True))
 
 class DespesaRateioSerializer(serializers.ModelSerializer):
     class Meta:
