@@ -46,13 +46,45 @@ class MoradiaViewSet(viewsets.ModelViewSet):
         if not moradia:
             return Response({"erro": "Usuário não pertence a nenhuma moradia."}, status=404)
 
+        # 1. Busca o Gasto Total da Casa
         total_casa = DespesaDetalhe.objects.filter(id_moradia=moradia).aggregate(Sum('valor_total'))['valor_total__sum'] or 0
 
-        meu_debito = DespesaRateio.objects.filter(
-            id_usuario_devedor=usuario, 
-            id_despesa_detalhe__status='pendente'
-        ).aggregate(Sum('valor_proporcional'))['valor_proporcional__sum'] or 0
+        # 2. Busca tudo o que eu tenho a RECEBER
+        receber_qs = DespesaRateio.objects.filter(
+            id_despesa_detalhe__id_usuario_credor=usuario, id_despesa_detalhe__status='pendente'
+        ).exclude(id_usuario_devedor=usuario).values(
+            'id_usuario_devedor__nome_completo'
+        ).annotate(total=Sum('valor_proporcional'))
 
+        # 3. Busca tudo o que eu tenho a PAGAR
+        pagar_qs = DespesaRateio.objects.filter(
+            id_usuario_devedor=usuario, id_despesa_detalhe__status='pendente'
+        ).exclude(id_despesa_detalhe__id_usuario_credor=usuario).values(
+            'id_despesa_detalhe__id_usuario_credor__nome_completo'
+        ).annotate(total=Sum('valor_proporcional'))
+
+        # 4. A MÁGICA DA COMPENSAÇÃO (O Cruzamento de Dados)
+        saldos = {}
+        
+        for item in receber_qs:
+            nome = item['id_usuario_devedor__nome_completo']
+            saldos[nome] = saldos.get(nome, 0) + float(item['total'])
+            
+        for item in pagar_qs:
+            nome = item['id_despesa_detalhe__id_usuario_credor__nome_completo']
+            saldos[nome] = saldos.get(nome, 0) - float(item['total'])
+
+        total_receber_liquido = 0
+        total_pagar_liquido = 0
+
+        # Separa os valores líquidos
+        for valor in saldos.values():
+            if valor > 0:
+                total_receber_liquido += valor
+            elif valor < 0:
+                total_pagar_liquido += abs(valor)
+
+        # 5. Busca as Tarefas Pendentes
         minhas_tarefas = Tarefa.objects.filter(
             id_moradia=moradia, 
             status=False, 
@@ -64,7 +96,8 @@ class MoradiaViewSet(viewsets.ModelViewSet):
             "usuario_nome": usuario.nome_completo,
             "republica_nome": moradia.nome,
             "total_gastos_casa": float(total_casa),
-            "meu_saldo_devedor": float(meu_debito),
+            "meu_saldo_devedor": total_pagar_liquido, # Agora envia o valor compensado
+            "meu_saldo_receber": total_receber_liquido, # Agora envia o valor compensado
             "tarefas_pendentes": minhas_tarefas,
             "codigo_convite": moradia.codigo_convite
         })
@@ -153,25 +186,105 @@ class DespesaDetalheViewSet(viewsets.ModelViewSet):
                     id_usuario_devedor_id=m_id, 
                     valor_proporcional=valor_fatia
                 )
+            
+        def perform_update(self, serializer):
+            despesa = serializer.save()
+            
+            moradores_ids = self.request.data.get('moradores_ids')
+            
+            if moradores_ids is not None:
+                DespesaRateio.objects.filter(id_despesa_detalhe=despesa).delete()
+                
+                if len(moradores_ids) > 0:
+                    valor_total = Decimal(str(despesa.valor_total))
+                    valor_fatia = valor_total / len(moradores_ids)
+
+                    for m_id in moradores_ids:
+                        DespesaRateio.objects.create(
+                            id_despesa_detalhe=despesa,
+                            id_usuario_devedor_id=m_id, 
+                            valor_proporcional=valor_fatia
+                        )
 
     @action(detail=False, methods=['get'])
     def balanco(self, request):
         usuario = request.user
 
-        receber = DespesaRateio.objects.filter(
+        receber_bruto = DespesaRateio.objects.filter(
             id_despesa_detalhe__id_usuario_credor=usuario,
             id_despesa_detalhe__status='pendente'
         ).exclude(id_usuario_devedor=usuario).aggregate(total=Sum('valor_proporcional'))['total'] or 0.00
 
-        pagar = DespesaRateio.objects.filter(
+        pagar_bruto = DespesaRateio.objects.filter(
             id_usuario_devedor=usuario,
             id_despesa_detalhe__status='pendente'
         ).exclude(id_despesa_detalhe__id_usuario_credor=usuario).aggregate(total=Sum('valor_proporcional'))['total'] or 0.00
+
+        # Transformamos com float() para garantir que a matemática não quebre
+        receber = float(receber_bruto)
+        pagar = float(pagar_bruto)
 
         return Response({
             "total_receber": receber,
             "total_pagar": pagar,
             "saldo_liquido": receber - pagar
+        })
+        
+    @action(detail=False, methods=['get'])
+    def balanco(self, request):
+        usuario = request.user
+        moradia = usuario.id_moradia
+
+        # 1. Busca o Gasto Total da Casa para o card fixo
+        total_casa = DespesaDetalhe.objects.filter(id_moradia=moradia).aggregate(Sum('valor_total'))['valor_total__sum'] or 0
+
+        # 2. Busca tudo o que eu tenho a RECEBER
+        receber_qs = DespesaRateio.objects.filter(
+            id_despesa_detalhe__id_usuario_credor=usuario, id_despesa_detalhe__status='pendente'
+        ).exclude(id_usuario_devedor=usuario).values(
+            'id_usuario_devedor__nome_completo'
+        ).annotate(total=Sum('valor_proporcional'))
+
+        # 3. Busca tudo o que eu tenho a PAGAR
+        pagar_qs = DespesaRateio.objects.filter(
+            id_usuario_devedor=usuario, id_despesa_detalhe__status='pendente'
+        ).exclude(id_despesa_detalhe__id_usuario_credor=usuario).values(
+            'id_despesa_detalhe__id_usuario_credor__nome_completo'
+        ).annotate(total=Sum('valor_proporcional'))
+
+        saldos = {}
+        
+        # Soma o que me devem (+)
+        for item in receber_qs:
+            nome = item['id_usuario_devedor__nome_completo']
+            saldos[nome] = saldos.get(nome, 0) + float(item['total'])
+            
+        # Subtrai o que eu devo (-)
+        for item in pagar_qs:
+            nome = item['id_despesa_detalhe__id_usuario_credor__nome_completo']
+            saldos[nome] = saldos.get(nome, 0) - float(item['total'])
+
+        # 5. Separa os resultados finais já mastigados para o celular
+        lista_receber = []
+        lista_pagar = []
+        total_receber_liquido = 0
+        total_pagar_liquido = 0
+
+        for nome, valor in saldos.items():
+            if valor > 0: # Se sobrou positivo, a pessoa me deve
+                lista_receber.append({"nome": nome, "valor": valor})
+                total_receber_liquido += valor
+            elif valor < 0: # Se ficou negativo, eu devo à pessoa
+                lista_pagar.append({"nome": nome, "valor": abs(valor)})
+                total_pagar_liquido += abs(valor)
+
+        return Response({
+            "total_gastos_casa": float(total_casa), # Enviando o total geral
+            "total_receber": total_receber_liquido,
+            "total_pagar": total_pagar_liquido,
+            "saldo_liquido": total_receber_liquido - total_pagar_liquido,
+            "detalhes_receber": lista_receber,
+            "detalhes_pagar": lista_pagar
         })
 
 class DespesaRateioViewSet(viewsets.ModelViewSet):

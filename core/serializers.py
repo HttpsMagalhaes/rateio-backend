@@ -36,6 +36,8 @@ class DespesaDetalheSerializer(serializers.ModelSerializer):
             'id_moradia', 'moradores_ids'
         ]
 
+        read_only_fields = ['id_usuario_credor', 'id_moradia']
+
     def get_moradores_ids(self, obj):
         from .models import DespesaRateio
         return list(DespesaRateio.objects.filter(id_despesa_detalhe=obj).values_list('id_usuario_devedor', flat=True))
