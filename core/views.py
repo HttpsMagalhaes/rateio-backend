@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from decimal import Decimal
 from django.db.models import Sum
 from .models import Moradia, Usuario, DespesaGeral, DespesaDetalhe, DespesaRateio, Pagamento, Tarefa, TarefaResponsavel
 from .serializers import (
@@ -75,10 +76,41 @@ class MoradiaViewSet(viewsets.ModelViewSet):
         dados = [{"id_usuario": m.id_usuario, "nome_completo": m.nome_completo} for m in moradores]
         return Response(dados)
 
-
 class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = Usuario.objects.all()
     serializer_class = UsuarioSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Usuario.objects.filter(id_usuario=self.request.user.id_usuario)
+
+    @action(detail=False, methods=['get', 'patch'])
+    def me(self, request):
+        usuario = request.user
+        if request.method == 'GET':
+            serializer = self.get_serializer(usuario)
+            return Response(serializer.data)
+        
+        nova_senha = request.data.get('nova_senha')
+        senha_antiga = request.data.get('senha_antiga')
+
+        if nova_senha:
+            if not senha_antiga:
+                return Response({"erro": "Você precisa informar a senha antiga para criar uma nova."}, status=400)
+            
+            if not usuario.check_password(senha_antiga):
+                return Response({"erro": "A senha antiga está incorreta."}, status=400)
+            
+            # Se passou pelos testes, troca a senha
+            usuario.set_password(nova_senha)
+            request.data.pop('nova_senha', None)
+            request.data.pop('senha_antiga', None)
+            
+        serializer = self.get_serializer(usuario, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
 
 class DespesaGeralViewSet(viewsets.ModelViewSet):
     queryset = DespesaGeral.objects.all()
@@ -103,10 +135,24 @@ class DespesaDetalheViewSet(viewsets.ModelViewSet):
         return DespesaDetalhe.objects.filter(id_moradia=self.request.user.id_moradia).order_by('-data_vencimento')
 
     def perform_create(self, serializer):
-        serializer.save(
+
+        despesa = serializer.save(
             id_usuario_credor=self.request.user,
             id_moradia=self.request.user.id_moradia
         )
+
+        moradores_ids = self.request.data.get('moradores_ids', [])
+        
+        if moradores_ids:
+            valor_total = Decimal(str(despesa.valor_total))
+            valor_fatia = valor_total / len(moradores_ids)
+
+            for m_id in moradores_ids:
+                DespesaRateio.objects.create(
+                    id_despesa_detalhe=despesa,
+                    id_usuario_devedor_id=m_id, 
+                    valor_proporcional=valor_fatia
+                )
 
     @action(detail=False, methods=['get'])
     def balanco(self, request):

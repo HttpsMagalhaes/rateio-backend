@@ -9,7 +9,7 @@ from .views import (
 router = DefaultRouter()
 
 router.register(r'moradias', MoradiaViewSet, basename='moradia')
-router.register(r'usuarios', UsuarioViewSet)
+router.register(r'usuarios', UsuarioViewSet, basename='usuario')
 router.register(r'categorias', DespesaGeralViewSet, basename='categoria')
 router.register(r'despesas', DespesaDetalheViewSet, basename='despesa') 
 router.register(r'rateios', DespesaRateioViewSet)
