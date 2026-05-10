@@ -102,6 +102,54 @@ class MoradiaViewSet(viewsets.ModelViewSet):
             "codigo_convite": moradia.codigo_convite
         })
 
+    @action(detail=False, methods=['get'], url_path='graficos')
+    def graficos_dashboard(self, request):
+        usuario = request.user
+        moradia = usuario.id_moradia
+
+        if not moradia:
+            return Response({"erro": "Sem moradia."}, status=404)
+
+        from django.db.models import Sum, Count
+        import datetime
+        
+        # Pega o mês e o ano atuais para o histórico padrão da tela inicial
+        hoje = datetime.datetime.now()
+        mes_atual = hoje.month
+        ano_atual = hoje.year
+
+        # 1. Dados para o Gráfico de Pizza (Quem pagou as contas concluídas do mês)
+        gastos = DespesaDetalhe.objects.filter(
+            id_moradia=moradia,
+            data_vencimento__month=mes_atual,
+            data_vencimento__year=ano_atual
+        ).values('id_usuario_credor__nome_completo').annotate(total=Sum('valor_total'))
+
+        grafico_despesas = [
+            {"nome": item['id_usuario_credor__nome_completo'], "valor": float(item['total'])}
+            for item in gastos
+        ]
+
+        # 2. Dados para o Gráfico de Barras (Quem concluiu mais tarefas no mês)
+        tarefas_feitas = TarefaResponsavel.objects.filter(
+            id_tarefa__id_moradia=moradia,
+            id_tarefa__status=True,
+            id_tarefa__data_limite__month=mes_atual,
+            id_tarefa__data_limite__year=ano_atual
+        ).values('id_usuario__nome_completo').annotate(total=Count('id_tarefa'))
+
+        grafico_tarefas = [
+            {"nome": item['id_usuario__nome_completo'], "total": item['total']}
+            for item in tarefas_feitas
+        ]
+
+        return Response({
+            "mes_atual": mes_atual,
+            "ano_atual": ano_atual,
+            "grafico_despesas": grafico_despesas,
+            "grafico_tarefas": grafico_tarefas
+        })
+
     @action(detail=True, methods=['get'])
     def moradores(self, request, pk=None):
         moradia = self.get_object()
@@ -287,6 +335,16 @@ class DespesaDetalheViewSet(viewsets.ModelViewSet):
             "detalhes_pagar": lista_pagar
         })
 
+    @action(detail=False, methods=['get'])
+    def historico(self, request):
+        # Traz apenas as despesas com status 'concluida'
+        despesas = DespesaDetalhe.objects.filter(
+            id_moradia=request.user.id_moradia,
+            status='concluida'
+        ).order_by('-data_vencimento')
+        serializer = self.get_serializer(despesas, many=True)
+        return Response(serializer.data)
+
 class DespesaRateioViewSet(viewsets.ModelViewSet):
     queryset = DespesaRateio.objects.all()
     serializer_class = DespesaRateioSerializer
@@ -296,8 +354,52 @@ class PagamentoViewSet(viewsets.ModelViewSet):
     serializer_class = PagamentoSerializer
 
 class TarefaViewSet(viewsets.ModelViewSet):
-    queryset = Tarefa.objects.all()
     serializer_class = TarefaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        usuario = self.request.user
+        if usuario.id_moradia:
+            # Filtra as tarefas da moradia ONDE o utilizador logado é um dos responsáveis
+            return Tarefa.objects.filter(
+                id_moradia=usuario.id_moradia,
+                tarefaresponsavel__id_usuario=usuario
+            ).order_by('data_limite').distinct() # distinct() evita que a tarefa apareça duplicada
+        return Tarefa.objects.none()
+
+    def perform_create(self, serializer):
+        tarefa = serializer.save(id_moradia=self.request.user.id_moradia)
+        # Agora recebemos uma lista de IDs
+        responsaveis_ids = self.request.data.get('responsaveis_ids', [])
+        for r_id in responsaveis_ids:
+            TarefaResponsavel.objects.create(id_tarefa=tarefa, id_usuario_id=r_id)
+
+    def perform_update(self, serializer):
+        tarefa = serializer.save()
+        responsaveis_ids = self.request.data.get('responsaveis_ids')
+        if responsaveis_ids is not None:
+            TarefaResponsavel.objects.filter(id_tarefa=tarefa).delete()
+            for r_id in responsaveis_ids:
+                TarefaResponsavel.objects.create(id_tarefa=tarefa, id_usuario_id=r_id)
+
+
+    # Rota especial para o botão de "Check" do aplicativo
+    @action(detail=True, methods=['patch'])
+    def concluir(self, request, pk=None):
+        tarefa = self.get_object()
+        tarefa.status = not tarefa.status # Inverte (se tava False vira True e vice-versa)
+        tarefa.save()
+        return Response({'status': tarefa.status, 'mensagem': 'Status alterado!'})
+
+    @action(detail=False, methods=['get'])
+    def historico(self, request):
+        # Traz apenas as tarefas que já foram marcadas como status=True
+        tarefas = Tarefa.objects.filter(
+            id_moradia=request.user.id_moradia,
+            status=True
+        ).order_by('-data_limite')
+        serializer = self.get_serializer(tarefas, many=True)
+        return Response(serializer.data)
 
 class TarefaResponsavelViewSet(viewsets.ModelViewSet):
     queryset = TarefaResponsavel.objects.all()

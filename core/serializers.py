@@ -53,11 +53,31 @@ class PagamentoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class TarefaSerializer(serializers.ModelSerializer):
+    responsaveis_nomes = serializers.SerializerMethodField()
+    responsaveis_ids = serializers.SerializerMethodField()
+
     class Meta:
         model = Tarefa
-        fields = '__all__'
+        fields = [
+            'id_tarefa', 'descricao', 'data_limite', 'status', 
+            'id_moradia', 'responsaveis_nomes', 'responsaveis_ids'
+        ]
+        read_only_fields = ['id_moradia']
+
+    def get_responsaveis_nomes(self, obj):
+        from .models import TarefaResponsavel
+        responsaveis = TarefaResponsavel.objects.filter(id_tarefa=obj)
+        if responsaveis.exists():
+            # Isto junta os nomes todos: "Felipe, Rafaela"
+            return ", ".join([r.id_usuario.nome_completo for r in responsaveis])
+        return "Sem responsável"
+
+    def get_responsaveis_ids(self, obj):
+        from .models import TarefaResponsavel
+        return list(TarefaResponsavel.objects.filter(id_tarefa=obj).values_list('id_usuario_id', flat=True))
 
 class TarefaResponsavelSerializer(serializers.ModelSerializer):
     class Meta:
         model = TarefaResponsavel
         fields = '__all__'
+

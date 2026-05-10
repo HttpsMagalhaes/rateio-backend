@@ -14,8 +14,8 @@ router.register(r'categorias', DespesaGeralViewSet, basename='categoria')
 router.register(r'despesas', DespesaDetalheViewSet, basename='despesa') 
 router.register(r'rateios', DespesaRateioViewSet)
 router.register(r'pagamentos', PagamentoViewSet)
-router.register(r'tarefas', TarefaViewSet)
-router.register(r'tarefas-responsaveis', TarefaResponsavelViewSet)
+router.register(r'tarefas', TarefaViewSet, basename='tarefa')
+router.register(r'tarefas-responsaveis', TarefaResponsavelViewSet, basename='tarefa-responsavel')
 
 urlpatterns = [
     path('', include(router.urls)),
