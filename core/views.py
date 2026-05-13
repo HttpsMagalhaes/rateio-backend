@@ -283,51 +283,53 @@ class DespesaDetalheViewSet(viewsets.ModelViewSet):
         usuario = request.user
         moradia = usuario.id_moradia
 
-        # 1. Busca o Gasto Total da Casa para o card fixo
         total_casa = DespesaDetalhe.objects.filter(id_moradia=moradia).aggregate(Sum('valor_total'))['valor_total__sum'] or 0
 
-        # 2. Busca tudo o que eu tenho a RECEBER
         receber_qs = DespesaRateio.objects.filter(
             id_despesa_detalhe__id_usuario_credor=usuario, id_despesa_detalhe__status='pendente'
         ).exclude(id_usuario_devedor=usuario).values(
             'id_usuario_devedor__nome_completo'
         ).annotate(total=Sum('valor_proporcional'))
 
-        # 3. Busca tudo o que eu tenho a PAGAR
         pagar_qs = DespesaRateio.objects.filter(
             id_usuario_devedor=usuario, id_despesa_detalhe__status='pendente'
         ).exclude(id_despesa_detalhe__id_usuario_credor=usuario).values(
-            'id_despesa_detalhe__id_usuario_credor__nome_completo'
+            'id_despesa_detalhe__id_usuario_credor__nome_completo',
+            'id_despesa_detalhe__id_usuario_credor__chave_pix' # <-- AQUI ESTÁ A CHAVE PIX SENDO BUSCADA
         ).annotate(total=Sum('valor_proporcional'))
 
         saldos = {}
+        chaves_pix = {} 
         
-        # Soma o que me devem (+)
         for item in receber_qs:
             nome = item['id_usuario_devedor__nome_completo']
             saldos[nome] = saldos.get(nome, 0) + float(item['total'])
             
-        # Subtrai o que eu devo (-)
         for item in pagar_qs:
             nome = item['id_despesa_detalhe__id_usuario_credor__nome_completo']
             saldos[nome] = saldos.get(nome, 0) - float(item['total'])
+            # Guardamos a chave pix no dicionário!
+            chaves_pix[nome] = item.get('id_despesa_detalhe__id_usuario_credor__chave_pix')
 
-        # 5. Separa os resultados finais já mastigados para o celular
         lista_receber = []
         lista_pagar = []
         total_receber_liquido = 0
         total_pagar_liquido = 0
 
         for nome, valor in saldos.items():
-            if valor > 0: # Se sobrou positivo, a pessoa me deve
+            if valor > 0:
                 lista_receber.append({"nome": nome, "valor": valor})
                 total_receber_liquido += valor
-            elif valor < 0: # Se ficou negativo, eu devo à pessoa
-                lista_pagar.append({"nome": nome, "valor": abs(valor)})
+            elif valor < 0:
+                lista_pagar.append({
+                    "nome": nome, 
+                    "valor": abs(valor), 
+                    "chave_pix": chaves_pix.get(nome) or "" # <-- AQUI ELA É ENVIADA PARA O CELULAR
+                })
                 total_pagar_liquido += abs(valor)
 
         return Response({
-            "total_gastos_casa": float(total_casa), # Enviando o total geral
+            "total_gastos_casa": float(total_casa),
             "total_receber": total_receber_liquido,
             "total_pagar": total_pagar_liquido,
             "saldo_liquido": total_receber_liquido - total_pagar_liquido,
@@ -344,6 +346,13 @@ class DespesaDetalheViewSet(viewsets.ModelViewSet):
         ).order_by('-data_vencimento')
         serializer = self.get_serializer(despesas, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['patch'])
+    def pagar(self, request, pk=None):
+        despesa = self.get_object()
+        despesa.status = 'concluida'
+        despesa.save()
+        return Response({'status': 'concluida', 'mensagem': 'Despesa baixada com sucesso!'})
 
 class DespesaRateioViewSet(viewsets.ModelViewSet):
     queryset = DespesaRateio.objects.all()
