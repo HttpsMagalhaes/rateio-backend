@@ -33,9 +33,9 @@ class DespesaDetalheSerializer(serializers.ModelSerializer):
             'id_despesa_detalhe', 'valor_total', 'data_vencimento', 'status',
             'id_usuario_credor', 'credor_nome', 
             'id_despesa_geral', 'categoria_descricao', 
-            'id_moradia', 'moradores_ids'
+            'id_moradia', 'moradores_ids',
+            'comprovante' 
         ]
-
         read_only_fields = ['id_usuario_credor', 'id_moradia']
 
     def get_moradores_ids(self, obj):

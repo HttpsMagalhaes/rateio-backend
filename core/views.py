@@ -222,8 +222,8 @@ class DespesaDetalheViewSet(viewsets.ModelViewSet):
             id_moradia=self.request.user.id_moradia
         )
 
-        moradores_ids = self.request.data.get('moradores_ids', [])
-        
+        moradores_ids = self.request.data.getlist('moradores_ids')
+
         if moradores_ids:
             valor_total = Decimal(str(despesa.valor_total))
             valor_fatia = valor_total / len(moradores_ids)
@@ -238,7 +238,7 @@ class DespesaDetalheViewSet(viewsets.ModelViewSet):
         def perform_update(self, serializer):
             despesa = serializer.save()
             
-            moradores_ids = self.request.data.get('moradores_ids')
+            moradores_ids = self.request.data.getlist('moradores_ids')
             
             if moradores_ids is not None:
                 DespesaRateio.objects.filter(id_despesa_detalhe=despesa).delete()

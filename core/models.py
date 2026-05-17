@@ -64,6 +64,7 @@ class DespesaDetalhe(models.Model):
     valor_total = models.DecimalField(max_digits=10, decimal_places=2)
     data_vencimento = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    comprovante = models.ImageField(upload_to='comprovantes/', null=True, blank=True)
     id_usuario_credor = models.ForeignKey(Usuario, on_delete=models.RESTRICT)
     id_despesa_geral = models.ForeignKey(DespesaGeral, on_delete=models.RESTRICT)
     id_moradia = models.ForeignKey(Moradia, on_delete=models.CASCADE)
