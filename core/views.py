@@ -1,8 +1,8 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from decimal import Decimal
 from django.db.models import Sum
 from .models import Moradia, Usuario, DespesaGeral, DespesaDetalhe, DespesaRateio, Pagamento, Tarefa, TarefaResponsavel
@@ -160,7 +160,12 @@ class MoradiaViewSet(viewsets.ModelViewSet):
 class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = Usuario.objects.all()
     serializer_class = UsuarioSerializer
-    permission_classes = [IsAuthenticated]
+    
+    # MUDANÇA AQUI: A função que gerencia as permissões de forma inteligente
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         return Usuario.objects.filter(id_usuario=self.request.user.id_usuario)
@@ -192,7 +197,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
-
+        
 class DespesaGeralViewSet(viewsets.ModelViewSet):
     queryset = DespesaGeral.objects.all()
     serializer_class = DespesaGeralSerializer
